@@ -17,6 +17,7 @@ public:
     template<class F, class... Args>
     auto enqueue(F&& f, Args&&... args) 
         -> std::future<typename std::result_of<F(Args...)>::type>;
+    size_t thread_count() const;
     ~ThreadPool();
 private:
     // need to keep track of threads so we can join them
@@ -93,6 +94,11 @@ inline ThreadPool::~ThreadPool()
     condition.notify_all();
     for(std::thread &worker: workers)
         worker.join();
+}
+
+inline size_t ThreadPool::thread_count() const
+{
+   return workers.size();
 }
 
 #endif
