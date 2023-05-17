@@ -15,6 +15,9 @@ class ThreadPool {
  public:
   explicit ThreadPool(std::size_t threads);
 
+  template <class F>
+  ThreadPool(std::size_t threads, F&& initialize);
+
   template <class F, class... Args>
   auto enqueue(F&& f, Args&&... args)
       -> std::future<typename std::result_of<F(Args...)>::type>;
@@ -22,6 +25,10 @@ class ThreadPool {
   ~ThreadPool();
 
  private:
+  // perform initialization
+  template <class F>
+  void setup(std::size_t threads, F&& initialize);
+
   // need to keep track of threads so we can join them
   std::vector<std::thread> workers;
   // the task queue
@@ -33,10 +40,11 @@ class ThreadPool {
   bool stop;
 };
 
-// the constructor just launches some amount of workers
-inline ThreadPool::ThreadPool(std::size_t threads) : stop(false) {
+template <class F>
+inline void ThreadPool::setup(std::size_t threads, F&& initialize) {
   for (std::size_t i = 0; i < threads; ++i) {
-    workers.emplace_back([this] {
+    workers.emplace_back([initialize, this] {
+      initialize();
       for (;;) {
         std::function<void()> task;
 
@@ -55,6 +63,19 @@ inline ThreadPool::ThreadPool(std::size_t threads) : stop(false) {
       }
     });
   }
+}
+
+// the constructor just launches some amount of workers and calls the
+// initializer in each
+template <class F>
+inline ThreadPool::ThreadPool(std::size_t threads, F&& initialize)
+    : stop(false) {
+  setup(threads, std::move(initialize));
+}
+
+// this constructor just launches the workers.
+inline ThreadPool::ThreadPool(std::size_t threads) : stop(false) {
+  setup(threads, []() {});
 }
 
 // add new work item to the pool
