@@ -1,6 +1,7 @@
 #ifndef THREAD_POOL_H
 #define THREAD_POOL_H
 
+#include <cassert>
 #include <condition_variable>
 #include <functional>
 #include <future>
@@ -12,25 +13,33 @@
 #include <vector>
 
 class ThreadPool {
- public:
+public:
+  static constexpr std::size_t kDefaultStackSize{8 * 1024 * 1024};
+
+public:
+  static void* entry_point(void* context);
+
+public:
   explicit ThreadPool(std::size_t threads);
 
   template <class F>
-  ThreadPool(std::size_t threads, F&& initialize);
+  ThreadPool(std::size_t threads, F &&initialize,
+             std::size_t stack_size = kDefaultStackSize);
 
   template <class F, class... Args>
-  auto enqueue(F&& f, Args&&... args)
+  auto enqueue(F &&f, Args &&...args)
       -> std::future<typename std::result_of<F(Args...)>::type>;
   std::size_t thread_count() const;
   ~ThreadPool();
 
- private:
+private:
   // perform initialization
   template <class F>
-  void setup(std::size_t threads, F&& initialize);
+  void setup(std::size_t num_threads, F &&initialize, std::size_t stack_size);
 
   // need to keep track of threads so we can join them
-  std::vector<std::thread> workers;
+  std::vector<pthread_t> threads;
+  std::vector<std::function<void()>> entry_points;
   // the task queue
   std::queue<std::function<void()>> tasks;
 
@@ -40,10 +49,21 @@ class ThreadPool {
   bool stop;
 };
 
+inline void* ThreadPool::entry_point(void *context) {
+  auto * const callback{static_cast<std::function<void()>*>(context)};
+  (*callback)();
+  return nullptr;
+}
+
 template <class F>
-inline void ThreadPool::setup(std::size_t threads, F&& initialize) {
-  for (std::size_t i = 0; i < threads; ++i) {
-    workers.emplace_back([initialize, this] {
+inline void ThreadPool::setup(std::size_t num_threads, F &&initialize,
+                              std::size_t stack_size) {
+  threads.reserve(num_threads);
+  entry_points.reserve(num_threads);
+
+  for (std::size_t i = 0; i < num_threads; ++i) {
+    threads.emplace_back();
+    entry_points.emplace_back([initialize, this] {
       initialize();
       for (;;) {
         std::function<void()> task;
@@ -62,25 +82,34 @@ inline void ThreadPool::setup(std::size_t threads, F&& initialize) {
         task();
       }
     });
+
+    pthread_attr_t pthread_attribute;
+    pthread_attr_init(&pthread_attribute);
+    pthread_attr_setstacksize(&pthread_attribute, stack_size);
+
+    pthread_create(&threads.back(), &pthread_attribute,
+                   &ThreadPool::entry_point, &entry_points.back());
+
+    pthread_attr_destroy(&pthread_attribute);
   }
 }
 
 // the constructor just launches some amount of workers and calls the
 // initializer in each
 template <class F>
-inline ThreadPool::ThreadPool(std::size_t threads, F&& initialize)
+inline ThreadPool::ThreadPool(std::size_t threads, F &&initialize,
+                              std::size_t stack_size)
     : stop(false) {
-  setup(threads, std::move(initialize));
+  setup(threads, std::forward<F>(initialize), stack_size);
 }
 
 // this constructor just launches the workers.
-inline ThreadPool::ThreadPool(std::size_t threads) : stop(false) {
-  setup(threads, []() {});
-}
+inline ThreadPool::ThreadPool(std::size_t threads)
+    : ThreadPool(threads, []() {}) {}
 
 // add new work item to the pool
 template <class F, class... Args>
-auto ThreadPool::enqueue(F&& f, Args&&... args)
+auto ThreadPool::enqueue(F &&f, Args &&...args)
     -> std::future<typename std::result_of<F(Args...)>::type> {
   using return_type = typename std::result_of<F(Args...)>::type;
 
@@ -89,7 +118,7 @@ auto ThreadPool::enqueue(F&& f, Args&&... args)
 
   std::future<return_type> res = task->get_future();
   {
-    std::unique_lock<std::mutex> lock(queue_mutex);
+    const std::unique_lock<std::mutex> lock(queue_mutex);
 
     // don't allow enqueueing after stopping the pool
     if (stop) {
@@ -105,15 +134,15 @@ auto ThreadPool::enqueue(F&& f, Args&&... args)
 // the destructor joins all threads
 inline ThreadPool::~ThreadPool() {
   {
-    std::unique_lock<std::mutex> lock(queue_mutex);
+    const std::unique_lock<std::mutex> lock(queue_mutex);
     stop = true;
   }
   condition.notify_all();
-  for (std::thread& worker : workers) {
-    worker.join();
+  for (const pthread_t &thread : threads) {
+    pthread_join(thread, nullptr);
   }
 }
 
-inline std::size_t ThreadPool::thread_count() const { return workers.size(); }
+inline std::size_t ThreadPool::thread_count() const { return threads.size(); }
 
 #endif
