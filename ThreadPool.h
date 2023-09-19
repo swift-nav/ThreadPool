@@ -12,26 +12,26 @@
 #include <vector>
 
 class ThreadPool {
-public:
+ public:
   static constexpr std::size_t kDefaultStackSize{8 * 1024 * 1024};
 
-public:
+ public:
   static void* entry_point(void* context);
 
-public:
-  explicit ThreadPool(std::size_t threads);
+ public:
+  explicit ThreadPool(std::size_t num_threads);
 
   template <class F>
-  ThreadPool(std::size_t threads, F &&initialize,
+  ThreadPool(std::size_t num_threads, F &&initialize,
              std::size_t stack_size = kDefaultStackSize);
 
   template <class F, class... Args>
-  auto enqueue(F &&f, Args &&...args)
+  auto enqueue(F&& f, Args&&... args)
       -> std::future<typename std::result_of<F(Args...)>::type>;
   std::size_t thread_count() const;
   ~ThreadPool();
 
-private:
+ private:
   // perform initialization
   template <class F>
   void setup(std::size_t num_threads, F &&initialize, std::size_t stack_size);
@@ -96,15 +96,15 @@ inline void ThreadPool::setup(std::size_t num_threads, F &&initialize,
 // the constructor just launches some amount of workers and calls the
 // initializer in each
 template <class F>
-inline ThreadPool::ThreadPool(std::size_t threads, F &&initialize,
+inline ThreadPool::ThreadPool(std::size_t num_threads, F &&initialize,
                               std::size_t stack_size)
     : stop(false) {
-  setup(threads, std::forward<F>(initialize), stack_size);
+  setup(num_threads, std::forward<F>(initialize), stack_size);
 }
 
 // this constructor just launches the workers.
-inline ThreadPool::ThreadPool(std::size_t threads)
-    : ThreadPool(threads, []() {}) {}
+inline ThreadPool::ThreadPool(std::size_t num_threads)
+    : ThreadPool(num_threads, []() {}) {}
 
 // add new work item to the pool
 template <class F, class... Args>
