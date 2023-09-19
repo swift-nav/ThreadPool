@@ -1,7 +1,6 @@
 #ifndef THREAD_POOL_H
 #define THREAD_POOL_H
 
-#include <cassert>
 #include <condition_variable>
 #include <functional>
 #include <future>
