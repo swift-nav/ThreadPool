@@ -34,7 +34,7 @@ class ThreadPool {
  private:
   // perform initialization
   template <class F>
-  void setup(std::size_t num_threads, F &&initialize, std::size_t stack_size);
+  void setup(std::size_t num_threads, F&& initialize, std::size_t stack_size);
 
   // need to keep track of threads so we can join them
   std::vector<pthread_t> threads;
@@ -96,7 +96,7 @@ inline void ThreadPool::setup(std::size_t num_threads, F &&initialize,
 // the constructor just launches some amount of workers and calls the
 // initializer in each
 template <class F>
-inline ThreadPool::ThreadPool(std::size_t num_threads, F &&initialize,
+inline ThreadPool::ThreadPool(std::size_t num_threads, F&& initialize,
                               std::size_t stack_size)
     : stop(false) {
   setup(num_threads, std::forward<F>(initialize), stack_size);
@@ -108,7 +108,7 @@ inline ThreadPool::ThreadPool(std::size_t num_threads)
 
 // add new work item to the pool
 template <class F, class... Args>
-auto ThreadPool::enqueue(F &&f, Args &&...args)
+auto ThreadPool::enqueue(F&& f, Args&&... args)
     -> std::future<typename std::result_of<F(Args...)>::type> {
   using return_type = typename std::result_of<F(Args...)>::type;
 
