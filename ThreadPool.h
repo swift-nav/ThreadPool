@@ -12,10 +12,7 @@
 #include <vector>
 
 class ThreadPool {
- public:
-  static constexpr std::size_t kDefaultStackSize{8 * 1024 * 1024};
-
- public:
+  public:
   static void* entry_point(void* context);
 
  public:
@@ -23,7 +20,7 @@ class ThreadPool {
 
   template <class F>
   ThreadPool(std::size_t num_threads, F &&initialize,
-             std::size_t stack_size = kDefaultStackSize);
+             std::size_t stack_size = 0);
 
   template <class F, class... Args>
   auto enqueue(F&& f, Args&&... args)
@@ -60,6 +57,13 @@ inline void ThreadPool::setup(std::size_t num_threads, F &&initialize,
   threads.reserve(num_threads);
   entry_points.reserve(num_threads);
 
+  pthread_attr_t pthread_attribute;
+  pthread_attr_init(&pthread_attribute);
+
+  if (stack_size != 0) {
+    pthread_attr_setstacksize(&pthread_attribute, stack_size);
+  }
+
   for (std::size_t i = 0; i < num_threads; ++i) {
     threads.emplace_back();
     entry_points.emplace_back([initialize, this] {
@@ -82,15 +86,11 @@ inline void ThreadPool::setup(std::size_t num_threads, F &&initialize,
       }
     });
 
-    pthread_attr_t pthread_attribute;
-    pthread_attr_init(&pthread_attribute);
-    pthread_attr_setstacksize(&pthread_attribute, stack_size);
-
     pthread_create(&threads.back(), &pthread_attribute,
                    &ThreadPool::entry_point, &entry_points.back());
-
-    pthread_attr_destroy(&pthread_attribute);
   }
+
+  pthread_attr_destroy(&pthread_attribute);
 }
 
 // the constructor just launches some amount of workers and calls the
