@@ -1,6 +1,6 @@
 module(
     name = "threadpool",
-    version = "0.1.0.swiftnav",
+    version = "0.1.1.swiftnav",
     compatibility_level = 1,
 )
 
